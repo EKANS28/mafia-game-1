@@ -64,6 +64,7 @@ app.get("/", (req, res) => {
 const socket = io();
 let code = "";
 
+// CREATE ROOM
 function create() {
   socket.emit("createRoom", {
     name: document.getElementById("name").value,
@@ -71,34 +72,45 @@ function create() {
   });
 }
 
+// JOIN ROOM
 function join() {
-  code = document.getElementById("room").value;
+  code = document.getElementById("room").value.trim();
+
   socket.emit("joinRoom", {
     name: document.getElementById("name").value,
     code
   });
 }
 
+// START GAME
 function start() {
   socket.emit("startGame", code);
 }
 
+// RECEIVE ROOM CODE
 socket.on("roomCode", c => {
-  code = c;
+  code = c; // 🔥 IMPORTANT FIX
   document.getElementById("code").innerText = "Room Code: " + c;
 });
 
+// UPDATE PLAYERS
 socket.on("players", players => {
   document.getElementById("players").innerHTML =
     players.map(p => "<li>" + p.name + "</li>").join("");
 });
 
+// SHOW ROLE CARD
 socket.on("role", role => {
   document.getElementById("role").innerHTML = \`
     <div class="card">
       🎴 Your Role: <b>\${role}</b>
     </div>
   \`;
+});
+
+// ERROR MESSAGE
+socket.on("errorMsg", msg => {
+  alert(msg);
 });
 </script>
 
@@ -107,7 +119,7 @@ socket.on("role", role => {
   `);
 });
 
-// 🎮 GAME LOGIC
+// 🎮 BACKEND
 io.on("connection", (socket) => {
 
   socket.on("createRoom", ({ name, mafiaCount }) => {
@@ -128,7 +140,10 @@ io.on("connection", (socket) => {
   });
 
   socket.on("joinRoom", ({ name, code }) => {
-    if (!rooms[code]) return;
+    if (!rooms[code]) {
+      socket.emit("errorMsg", "Room not found ❌");
+      return;
+    }
 
     socket.join(code);
     rooms[code].players.push({ id: socket.id, name });
@@ -142,24 +157,24 @@ io.on("connection", (socket) => {
 
     let shuffled = [...room.players].sort(() => Math.random() - 0.5);
 
-    // Assign Mafia
+    // Mafia
     for (let i = 0; i < room.mafiaCount; i++) {
       room.roles[shuffled[i].id] = "Mafia";
     }
 
-    // Assign Doctor
+    // Doctor
     if (shuffled.length > room.mafiaCount) {
       room.roles[shuffled[room.mafiaCount].id] = "Doctor";
     }
 
-    // Others Villager
+    // Villagers
     shuffled.forEach(p => {
       if (!room.roles[p.id]) {
         room.roles[p.id] = "Villager";
       }
     });
 
-    // Send role to each player
+    // Send role
     room.players.forEach(p => {
       io.to(p.id).emit("role", room.roles[p.id]);
     });
