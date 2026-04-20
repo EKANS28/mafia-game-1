@@ -20,7 +20,6 @@ app.get("/", (req, res) => {
 <title>Mafia Pro</title>
 
 <style>
-/* 🌈 ANIMATED BACKGROUND */
 body {
   font-family: Arial;
   text-align:center;
@@ -38,8 +37,7 @@ body {
   100% {background-position:0% 50%;}
 }
 
-/* INPUT + BUTTON */
-input {
+input, button {
   padding:10px;
   margin:5px;
   border-radius:5px;
@@ -47,54 +45,27 @@ input {
 }
 
 button {
-  padding:10px 15px;
-  margin:5px;
-  border:none;
-  border-radius:5px;
   background: crimson;
   color:white;
   cursor:pointer;
-  transition:0.3s;
 }
 
 button:hover {
   background: gold;
   color:black;
-  transform: scale(1.1);
 }
 
-/* CARD */
 .card {
   margin-top:20px;
   padding:20px;
   border:2px solid white;
   border-radius:10px;
   font-size:24px;
-  animation: pop 0.5s ease;
-}
-
-@keyframes pop {
-  from {transform:scale(0);}
-  to {transform:scale(1);}
-}
-
-/* HOST VIEW */
-.hostList li {
-  margin:5px;
-  padding:10px;
-  border-radius:5px;
-  animation: fade 1s ease;
-}
-
-@keyframes fade {
-  from {opacity:0;}
-  to {opacity:1;}
 }
 
 .mafia { background:red; }
 .doctor { background:green; }
 .villager { background:gray; }
-
 </style>
 </head>
 
@@ -118,7 +89,7 @@ button:hover {
 <ul id="players"></ul>
 
 <div id="role"></div>
-<ul id="hostView" class="hostList"></ul>
+<ul id="hostView"></ul>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -126,7 +97,6 @@ const socket = io();
 let code = "";
 let isHost = false;
 
-// CREATE
 function create(){
   socket.emit("createRoom", {
     name: document.getElementById("name").value,
@@ -135,7 +105,6 @@ function create(){
   });
 }
 
-// JOIN
 function join(){
   code = document.getElementById("room").value.trim().toUpperCase();
   socket.emit("joinRoom", {
@@ -144,25 +113,21 @@ function join(){
   });
 }
 
-// START
 function start(){
   socket.emit("startGame", code);
 }
 
-// ROOM CODE
 socket.on("roomCode", c=>{
   code = c;
   isHost = true;
   document.getElementById("code").innerText = "Room: " + c + " (HOST)";
 });
 
-// PLAYERS
 socket.on("players", players=>{
   document.getElementById("players").innerHTML =
     players.map(p=>"<li>"+p.name+"</li>").join("");
 });
 
-// PLAYER ROLE
 socket.on("role", role=>{
   if(!isHost){
     document.getElementById("role").innerHTML =
@@ -170,7 +135,6 @@ socket.on("role", role=>{
   }
 });
 
-// HOST VIEW
 socket.on("hostRoles", list=>{
   if(isHost){
     document.getElementById("hostView").innerHTML =
@@ -180,7 +144,6 @@ socket.on("hostRoles", list=>{
   }
 });
 
-// ERROR
 socket.on("errorMsg", msg=>{
   alert(msg);
 });
@@ -230,9 +193,12 @@ io.on("connection", socket => {
     io.to(code).emit("players", room.players);
   });
 
+  // 🔥 UPDATED START GAME
   socket.on("startGame", (code) => {
     let room = rooms[code];
     if (!room) return;
+
+    if (socket.id !== room.host) return;
 
     if (room.players.length < room.maxPlayers) {
       io.to(room.host).emit("errorMsg", "Players not full ❌");
@@ -243,22 +209,45 @@ io.on("connection", socket => {
 
     room.roles = {};
 
+    // Mafia
     for (let i = 0; i < room.mafiaCount; i++) {
       if (shuffled[i]) room.roles[shuffled[i].id] = "Mafia";
     }
 
+    // Doctor
     if (shuffled[room.mafiaCount]) {
       room.roles[shuffled[room.mafiaCount].id] = "Doctor";
     }
 
-    shuffled.forEach(p=>{
+    // Villagers
+    shuffled.forEach(p => {
       if (!room.roles[p.id]) room.roles[p.id] = "Villager";
     });
 
-    room.players.forEach(p=>{
-      io.to(p.id).emit("role", room.roles[p.id]);
+    // 🔥 Mafia list
+    let mafiaPlayers = room.players.filter(p => room.roles[p.id] === "Mafia");
+
+    // Send roles
+    room.players.forEach(p => {
+
+      let role = room.roles[p.id];
+
+      if (role === "Mafia") {
+
+        let teammates = mafiaPlayers
+          .filter(mp => mp.id !== p.id)
+          .map(mp => mp.name);
+
+        io.to(p.id).emit("role",
+          "Mafia 🔪<br>Team: " + (teammates.length ? teammates.join(", ") : "You are alone")
+        );
+
+      } else {
+        io.to(p.id).emit("role", role);
+      }
     });
 
+    // Host view
     let list = room.players.map(p=>{
       return { name: p.name, role: room.roles[p.id] };
     });
